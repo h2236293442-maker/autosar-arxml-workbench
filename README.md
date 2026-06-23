@@ -22,7 +22,7 @@
 .
 ├── parse_arxml_export.py      # 通用 ARXML 解析与报告导出脚本
 ├── build_rx_frame_map.py      # 按指定 CAN 通道生成 RX Frame/PDU 映射
-├── arxml_viewer.html          # 本地 Web 可视化检索页面
+├── index.html                 # 本地 Web 可视化检索页面
 ├── vercel.json                # 可选：静态页面部署配置
 └── .gitignore                 # 默认排除 ARXML 和生成数据
 ```
@@ -54,7 +54,7 @@ python3 build_rx_frame_map.py \
 
 ### 3. 浏览器本地查看
 
-直接用浏览器打开 `arxml_viewer.html`，选择或拖入本地 `.arxml` / `.xml` 文件即可。
+直接用浏览器打开 `index.html`，选择或拖入本地 `.arxml` / `.xml` 文件即可。
 
 Web Viewer 的设计目标是“本地分析”：ARXML 文件不会随仓库上传，也不需要提交到服务器才能解析。
 
