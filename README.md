@@ -23,7 +23,6 @@
 ├── parse_arxml_export.py      # 通用 ARXML 解析与报告导出脚本
 ├── build_rx_frame_map.py      # 按指定 CAN 通道生成 RX Frame/PDU 映射
 ├── arxml_viewer.html          # 本地 Web 可视化检索页面
-├── assets/                    # Web 页面静态资源
 ├── vercel.json                # 可选：静态页面部署配置
 └── .gitignore                 # 默认排除 ARXML 和生成数据
 ```

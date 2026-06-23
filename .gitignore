@@ -1,0 +1,27 @@
+# ARXML source files are often proprietary or project-confidential.
+*.arxml
+*.xml
+
+# Generated reports / derived data
+*.parsed.json
+*.search.txt
+*.report.md
+rx_frame_map.json
+assets/*.png
+outputs/
+dist/
+
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local tool state
+.DS_Store
+.agents/
+.trae/
+.codex/
+
+# Logs
+*.log
