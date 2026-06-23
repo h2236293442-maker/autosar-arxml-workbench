@@ -3,16 +3,16 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "/arxml_viewer.html"
+      "destination": "/index.html"
     },
     {
       "source": "/(.*)",
-      "destination": "/arxml_viewer.html"
+      "destination": "/index.html"
     }
   ],
   "headers": [
     {
-      "source": "/arxml_viewer.html",
+      "source": "/index.html",
       "headers": [
         {
           "key": "Cache-Control",
