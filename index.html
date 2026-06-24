@@ -2313,11 +2313,19 @@
       transition: background 0.18s ease, box-shadow 0.18s ease;
     }
     .result-row:hover {
-      background: rgba(var(--accent-rgb), 0.06);
+      background: rgba(var(--accent-rgb), 0.035);
     }
     .result-row.selected {
-      background: rgba(var(--accent-rgb), 0.12);
-      box-shadow: inset 3px 0 0 rgba(var(--accent-rgb), 0.72);
+      background: rgba(var(--accent-rgb), 0.055);
+      box-shadow:
+        inset 2px 0 0 rgba(var(--accent-rgb), 0.78),
+        inset 0 1px 0 rgba(var(--accent-rgb), 0.08),
+        inset 0 -1px 0 rgba(var(--accent-rgb), 0.08);
+    }
+    .result-row.selected .cell-token {
+      background: rgba(255, 255, 255, 0.72);
+      border-color: rgba(17, 24, 39, 0.08);
+      box-shadow: none;
     }
     .help-grid {
       display: grid;
@@ -3417,11 +3425,11 @@
       display: inline-flex;
       align-items: center;
       max-width: 100%;
-      padding: 2px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(17, 24, 39, 0.10);
-      background: rgba(17, 24, 39, 0.03);
-      color: rgba(17, 24, 39, 0.84);
+      padding: 2px 7px;
+      border-radius: 8px;
+      border: 1px solid rgba(17, 24, 39, 0.07);
+      background: rgba(17, 24, 39, 0.025);
+      color: rgba(17, 24, 39, 0.78);
       font-size: 12px;
       line-height: 1.25;
       word-break: break-word;
@@ -3431,7 +3439,8 @@
     }
     .cell-token.compact {
       padding: 1px 6px;
-      background: rgba(255, 255, 255, 0.88);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.64);
     }
     .cell-token.more {
       color: var(--muted);
@@ -3953,10 +3962,18 @@
       background: rgba(17, 19, 24, 0.72);
     }
     body[data-theme="dark"] .result-row:hover {
-      background: rgba(var(--accent-rgb), 0.08);
+      background: rgba(var(--accent-rgb), 0.055);
     }
     body[data-theme="dark"] .result-row.selected {
-      background: rgba(var(--accent-rgb), 0.14);
+      background: rgba(var(--accent-rgb), 0.09);
+      box-shadow:
+        inset 2px 0 0 rgba(var(--accent-rgb), 0.72),
+        inset 0 1px 0 rgba(var(--accent-rgb), 0.08),
+        inset 0 -1px 0 rgba(var(--accent-rgb), 0.08);
+    }
+    body[data-theme="dark"] .result-row.selected .cell-token {
+      background: rgba(17, 19, 24, 0.76);
+      border-color: rgba(255, 255, 255, 0.10);
     }
     body[data-theme="dark"] .title,
     body[data-theme="dark"] .section-title,
