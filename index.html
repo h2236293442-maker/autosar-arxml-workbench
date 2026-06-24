@@ -6,6 +6,7 @@
   <title>ARXML Workbench</title>
   <meta name="description" content="ARXML Workbench 是面向 AUTOSAR 工程场景的 ARXML 本地解析与检索工具，支持 Frame、PDU、Signal、Signal Group 结构化筛选与导出。" />
   <meta id="themeColorMeta" name="theme-color" content="#f7f7f8" />
+  <link rel="preload" as="image" href="./assets/engineering-workbench.webp" type="image/webp" />
   <link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="%231f2937"/><path d="M28.2 16.8a14 14 0 1 0 0 28 14 14 0 0 0 0-28Zm0 5a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z" fill="%232dd4bf"/><path d="M42.7 42.7 52 52" stroke="%232dd4bf" stroke-width="5" stroke-linecap="round"/></svg>' />
   <style>
     :root {
@@ -1379,6 +1380,11 @@
         linear-gradient(180deg, transparent 58%, rgba(17, 24, 39, 0.18)),
         linear-gradient(90deg, rgba(var(--accent-rgb), 0.10), transparent 36%);
       opacity: 0.58;
+    }
+    .scene-visual-wrap picture {
+      display: block;
+      width: 100%;
+      height: 100%;
     }
     .scene-visual-wrap .visual-illust {
       width: 100%;
@@ -4210,7 +4216,10 @@
         </div>
         <div class="home-grid-2 home-scene-layout">
           <div class="scene-visual-wrap" aria-label="工程场景插图：信号排查工作台">
-            <img class="visual-illust" src="./assets/engineering-workbench.png" alt="ARXML 信号排查工作台示意" loading="lazy" decoding="async">
+            <picture>
+              <source srcset="./assets/engineering-workbench.webp" type="image/webp">
+              <img class="visual-illust" src="./assets/engineering-workbench.png" width="1448" height="1086" alt="ARXML 信号排查工作台示意" loading="eager" decoding="async" fetchpriority="low">
+            </picture>
           </div>
           <div class="home-stack" aria-label="典型场景">
             <div class="home-card">
