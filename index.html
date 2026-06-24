@@ -5631,7 +5631,7 @@
       return /^[A-Za-z0-9_.:/-]+$/.test(v);
     }
 
-    function focusSignalByName(name) {
+    function focusSignalByName(name, options = {}) {
       const keyword = normalizeSignalName(name);
       if (!keyword) return false;
       if (getCurrentRoute() !== "/workspace") {
@@ -5655,13 +5655,15 @@
       const limit = parseInt(el.limitFilter.value, 10) || 500;
       renderRows(state.filteredRows.slice(0, limit), state.filteredRows.length, limit);
       renderInspector(row);
-      requestAnimationFrame(() => {
-        try {
-          const safe = String(row.rowKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-          const rowEl = document.querySelector(`tr[data-row-key="${safe}"]`);
-          if (rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
-        } catch (_) {}
-      });
+      if (options.scroll) {
+        requestAnimationFrame(() => {
+          try {
+            const safe = String(row.rowKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+            const rowEl = document.querySelector(`tr[data-row-key="${safe}"]`);
+            if (rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          } catch (_) {}
+        });
+      }
       setStatus(`已定位信号：${row.name || keyword}`, "ok");
       return true;
     }
