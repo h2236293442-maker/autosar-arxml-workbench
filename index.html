@@ -5178,12 +5178,17 @@
       pendingClipboardSignal: "",
       clipboardAutoTimer: 0,
       clipboardWatchTimer: 0,
+      clipboardResumeTimer: 0,
       lastClipboardSignal: "",
+      clipboardAutoSuppressed: false,
       clipboardPrompting: false,
       clipboardPromptedThisPage: false,
       clipboardPermissionState: "",
       cacheEnabled: false
     };
+
+    const CLIPBOARD_RESUME_DELAY_MS = 10000;
+    const CLIPBOARD_PROMPT_VERSION = "clipboard-auto-v2";
 
     const STORAGE_KEYS = {
       filterPrefs: "arxml-workbench-filter-prefs",
@@ -5193,6 +5198,7 @@
       cacheEnabled: "arxml-workbench-cache-enabled",
       clipboardConsent: "arxml-workbench-clipboard-consent",
       clipboardPrompted: "arxml-workbench-clipboard-prompted",
+      clipboardPromptVersion: "arxml-workbench-clipboard-prompt-version",
       clipboardReady: "arxml-workbench-clipboard-ready"
     };
 
@@ -5752,7 +5758,6 @@
 
     async function getClipboardPermissionState() {
       if (!navigator.clipboard || !navigator.clipboard.readText) return "unsupported";
-      if (state.clipboardPermissionState === "granted" || readStoredJson(STORAGE_KEYS.clipboardReady, false)) return "granted";
       if (!navigator.permissions || !navigator.permissions.query) return state.clipboardPermissionState || "unknown";
       try {
         const permission = await navigator.permissions.query({ name: "clipboard-read" });
@@ -5764,21 +5769,18 @@
     }
 
     function markClipboardReadable() {
-      state.clipboardPermissionState = "granted";
       writeStoredJson(STORAGE_KEYS.clipboardConsent, true);
       writeStoredJson(STORAGE_KEYS.clipboardPrompted, true);
       writeStoredJson(STORAGE_KEYS.clipboardReady, true);
     }
 
     function canTryClipboardAutoRead() {
-      return Boolean(
-        state.clipboardPermissionState === "granted" ||
-        readStoredJson(STORAGE_KEYS.clipboardReady, false) ||
-        readStoredJson(STORAGE_KEYS.clipboardConsent, false)
-      );
+      if (state.clipboardAutoSuppressed) return false;
+      return state.clipboardPermissionState === "granted";
     }
 
     async function tryReadClipboardAndFocus(showMessageOnFail, options = {}) {
+      if (options.auto && state.clipboardAutoSuppressed) return false;
       if (!navigator.clipboard || !navigator.clipboard.readText) {
         if (showMessageOnFail) setStatus("当前浏览器不支持读取剪贴板。", "warn");
         return false;
@@ -5804,10 +5806,14 @@
         if (alreadyFocused && !options.force) return true;
         return focusSignalByName(keyword);
       } catch (err) {
-        if (options.auto && err && err.name === "NotAllowedError") {
+        if (err && err.name === "NotAllowedError") {
           writeStoredJson(STORAGE_KEYS.clipboardConsent, false);
           writeStoredJson(STORAGE_KEYS.clipboardReady, false);
-          state.clipboardPermissionState = "";
+          state.clipboardPermissionState = options.auto ? "" : "denied";
+          if (options.auto) {
+            window.clearTimeout(state.clipboardAutoTimer);
+            window.clearInterval(state.clipboardWatchTimer);
+          }
         }
         if (showMessageOnFail) setStatus("无法读取剪贴板，请点击“剪贴板定位”后再试。", "warn");
         return false;
@@ -5815,10 +5821,11 @@
     }
 
     function scheduleClipboardAutoFocus(delay = 180) {
-      if (!readStoredJson(STORAGE_KEYS.clipboardConsent, false)) return;
+      if (state.clipboardAutoSuppressed) return;
       window.clearTimeout(state.clipboardAutoTimer);
       state.clipboardAutoTimer = window.setTimeout(() => {
         if (getCurrentRoute() !== "/workspace") return;
+        if (state.clipboardAutoSuppressed) return;
         if (el.uploadModal && !el.uploadModal.classList.contains("hidden")) return;
         void tryReadClipboardAndFocus(false, { auto: true });
       }, delay);
@@ -5826,9 +5833,10 @@
 
     function startClipboardWatcher() {
       window.clearInterval(state.clipboardWatchTimer);
-      if (!readStoredJson(STORAGE_KEYS.clipboardConsent, false)) return;
+      if (state.clipboardAutoSuppressed) return;
       state.clipboardWatchTimer = window.setInterval(() => {
         if (getCurrentRoute() !== "/workspace") return;
+        if (state.clipboardAutoSuppressed) return;
         if (document.visibilityState === "hidden") return;
         if (el.uploadModal && !el.uploadModal.classList.contains("hidden")) return;
         void tryReadClipboardAndFocus(false, { auto: true });
@@ -5836,40 +5844,68 @@
       scheduleClipboardAutoFocus(120);
     }
 
+    function suppressClipboardAutoFocus() {
+      state.clipboardAutoSuppressed = true;
+      state.pendingClipboardSignal = "";
+      window.clearTimeout(state.clipboardAutoTimer);
+      window.clearInterval(state.clipboardWatchTimer);
+      window.clearTimeout(state.clipboardResumeTimer);
+      state.clipboardResumeTimer = window.setTimeout(() => {
+        state.clipboardAutoSuppressed = false;
+        startClipboardWatcher();
+      }, CLIPBOARD_RESUME_DELAY_MS);
+    }
+
     async function maybeRequestClipboardAccessOnce() {
       if (getCurrentRoute() !== "/workspace") return false;
+      if (state.clipboardAutoSuppressed) return false;
       if (!navigator.clipboard || !navigator.clipboard.readText) return false;
       const permissionState = await getClipboardPermissionState();
       if (permissionState === "granted") {
-        writeStoredJson(STORAGE_KEYS.clipboardConsent, true);
+        state.clipboardPermissionState = "granted";
+        markClipboardReadable();
         startClipboardWatcher();
+        scheduleClipboardAutoFocus(120);
         return true;
       }
-      if (permissionState === "denied") return false;
+      if (permissionState === "denied") {
+        writeStoredJson(STORAGE_KEYS.clipboardPrompted, true);
+        writeStoredJson(STORAGE_KEYS.clipboardPromptVersion, CLIPBOARD_PROMPT_VERSION);
+        writeStoredJson(STORAGE_KEYS.clipboardConsent, false);
+        writeStoredJson(STORAGE_KEYS.clipboardReady, false);
+        return false;
+      }
       if (state.clipboardPrompting) return false;
-      if (state.clipboardPromptedThisPage) return false;
-      if (
-        readStoredJson(STORAGE_KEYS.clipboardPrompted, false) &&
-        (readStoredJson(STORAGE_KEYS.clipboardReady, false) || readStoredJson(STORAGE_KEYS.clipboardConsent, false))
-      ) return false;
+      const promptedForCurrentVersion = readStoredJson(STORAGE_KEYS.clipboardPromptVersion, "") === CLIPBOARD_PROMPT_VERSION;
+      if (state.clipboardPromptedThisPage || promptedForCurrentVersion) return false;
       if (el.confirmModal && !el.confirmModal.classList.contains("hidden")) return false;
       state.clipboardPrompting = true;
       state.clipboardPromptedThisPage = true;
       const ok = await openConfirmModal({
-        title: "允许自动识别剪贴板？",
-        body: "授权后，工作区会在本地读取剪贴板中的信号名；内容不符合信号名格式时不会搜索，也不会改变当前页面状态。",
-        okText: "允许读取",
+        title: "启用剪贴板自动定位？",
+        body: "允许后会读取本机剪贴板里的信号名并自动搜索。你手动输入或清空筛选时会暂停一段时间。",
+        okText: "启用",
         cancelText: "暂不启用"
       });
       state.clipboardPrompting = false;
       writeStoredJson(STORAGE_KEYS.clipboardPrompted, true);
-      if (!ok) return false;
+      writeStoredJson(STORAGE_KEYS.clipboardPromptVersion, CLIPBOARD_PROMPT_VERSION);
+      if (!ok) {
+        writeStoredJson(STORAGE_KEYS.clipboardConsent, false);
+        return false;
+      }
       writeStoredJson(STORAGE_KEYS.clipboardConsent, true);
       const readOk = await tryReadClipboardAndFocus(false, { force: true });
       if (!readOk && !readStoredJson(STORAGE_KEYS.clipboardReady, false)) {
         writeStoredJson(STORAGE_KEYS.clipboardConsent, false);
+        return false;
       }
-      startClipboardWatcher();
+      const nextPermissionState = await getClipboardPermissionState();
+      if (nextPermissionState === "granted") {
+        state.clipboardPermissionState = "granted";
+        startClipboardWatcher();
+        scheduleClipboardAutoFocus(120);
+      }
       return true;
     }
 
@@ -6053,6 +6089,87 @@
       return String(value || "").trim().replace(/\s+/g, " ");
     }
 
+    function normalizeSearchText(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function editDistanceWithin(a, b, limit) {
+      const left = String(a || "");
+      const right = String(b || "");
+      if (Math.abs(left.length - right.length) > limit) return false;
+      if (left === right) return true;
+      let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+      for (let i = 1; i <= left.length; i += 1) {
+        const current = [i];
+        let rowMin = current[0];
+        for (let j = 1; j <= right.length; j += 1) {
+          const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+          const value = Math.min(
+            previous[j] + 1,
+            current[j - 1] + 1,
+            previous[j - 1] + cost
+          );
+          current[j] = value;
+          rowMin = Math.min(rowMin, value);
+        }
+        if (rowMin > limit) return false;
+        previous = current;
+      }
+      return previous[right.length] <= limit;
+    }
+
+    function getApproxLimit(token) {
+      if (token.length < 4) return 0;
+      if (token.length < 8) return 1;
+      return 2;
+    }
+
+    function tokenApproximatelyMatches(token, searchTokens) {
+      const limit = getApproxLimit(token);
+      return searchTokens.some(candidate => {
+        if (!candidate) return false;
+        if (candidate.includes(token)) return true;
+        if (!limit) return false;
+        if (Math.abs(candidate.length - token.length) > limit) return false;
+        return editDistanceWithin(token, candidate, limit);
+      });
+    }
+
+    function getFuzzySearchScore(row, keyword) {
+      const normalizedKeyword = normalizeSearchText(keyword);
+      if (!normalizedKeyword) return 0;
+      const normalizedSearch = normalizeSearchText(row.searchText || "");
+      if (!normalizedSearch) return Infinity;
+      const compactKeyword = normalizedKeyword.replace(/\s+/g, "");
+      const compactSearch = normalizedSearch.replace(/\s+/g, "");
+      const normalizedName = normalizeSearchText(row.name || "");
+      const compactName = normalizedName.replace(/\s+/g, "");
+      if (compactName === compactKeyword) return 0;
+      if (compactName.startsWith(compactKeyword)) return 1;
+      if (compactName.includes(compactKeyword)) return 2;
+      if (normalizedSearch.includes(normalizedKeyword) || compactSearch.includes(compactKeyword)) return 4;
+      const tokens = normalizedKeyword.split(" ").filter(Boolean);
+      const searchTokens = normalizedSearch.split(" ").filter(Boolean);
+      if (tokens.length > 1 && tokens.every(token => normalizedSearch.includes(token) || compactSearch.includes(token))) return 8;
+      if (tokens.length && tokens.every(token => tokenApproximatelyMatches(token, searchTokens))) {
+        const nearest = Math.min(...searchTokens.map(candidate => {
+          if (candidate.includes(compactKeyword)) return 0;
+          const limit = getApproxLimit(compactKeyword);
+          return editDistanceWithin(compactKeyword, candidate, limit) ? Math.abs(compactKeyword.length - candidate.length) + 1 : 9;
+        }));
+        return 12 + nearest;
+      }
+      return Infinity;
+    }
+
+    function fuzzyMatchesSearch(row, keyword) {
+      return Number.isFinite(getFuzzySearchScore(row, keyword));
+    }
+
     function rememberSearch(keyword) {
       const next = normalizeSearchKeyword(keyword);
       if (!next) return;
@@ -6112,6 +6229,7 @@
     }
 
     function resetFilters() {
+      suppressClipboardAutoFocus();
       el.searchInput.value = "";
       setTypeFilterValue("all");
       setDirectionFilterValue("all");
@@ -7054,7 +7172,7 @@
     }
 
     function applyFilters() {
-      const kw = (el.searchInput.value || "").trim().toLowerCase();
+      const kw = normalizeSearchKeyword(el.searchInput.value || "");
       const type = el.typeFilter.value;
       const direction = el.directionFilter.value;
       const channel = el.channelFilter.value;
@@ -7071,7 +7189,11 @@
         rows = rows.filter(r => (r.channels || []).includes(channel));
       }
       if (kw) {
-        rows = rows.filter(r => r.searchText.includes(kw));
+        rows = rows
+          .map((row, index) => ({ row, index, score: getFuzzySearchScore(row, kw) }))
+          .filter(item => Number.isFinite(item.score))
+          .sort((a, b) => a.score - b.score || a.index - b.index)
+          .map(item => item.row);
       }
       state.filteredRows = rows;
       if (!rows.some(r => r.rowKey === state.selectedRow?.rowKey)) {
@@ -7302,7 +7424,10 @@
       if (file) handlePickedFile(file);
     });
     el.dropZone.addEventListener("click", () => el.fileInput.click());
-    el.searchInput.addEventListener("input", applyFilters);
+    el.searchInput.addEventListener("input", () => {
+      suppressClipboardAutoFocus();
+      applyFilters();
+    });
     el.searchInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         rememberSearch(el.searchInput.value || "");
@@ -7482,22 +7607,28 @@
     }
     if (el.clipboardFocusBtn) {
       el.clipboardFocusBtn.addEventListener("click", async () => {
-        const consented = Boolean(readStoredJson(STORAGE_KEYS.clipboardConsent, false));
-        if (!consented) {
-          const ok = await openConfirmModal({
-            title: "读取剪贴板内容",
-            body: "将读取你当前剪贴板文本用于信号定位（仅在本地浏览器内处理，不上传）。是否继续？",
-            okText: "继续读取",
-            cancelText: "取消"
-          });
-          if (!ok) return;
-          writeStoredJson(STORAGE_KEYS.clipboardConsent, true);
-          writeStoredJson(STORAGE_KEYS.clipboardPrompted, true);
+        state.clipboardAutoSuppressed = false;
+        window.clearTimeout(state.clipboardResumeTimer);
+        state.clipboardPermissionState = "";
+        const permissionState = await getClipboardPermissionState();
+        if (permissionState === "denied") {
+          setStatus("浏览器已阻止读取剪贴板，请在地址栏权限设置中允许后再试。", "warn");
+          return;
         }
-        startClipboardWatcher();
         const readOk = await tryReadClipboardAndFocus(true, { force: true });
         if (!readOk && !readStoredJson(STORAGE_KEYS.clipboardReady, false)) {
           writeStoredJson(STORAGE_KEYS.clipboardConsent, false);
+        }
+        if (readOk) {
+          const nextPermissionState = await getClipboardPermissionState();
+          if (nextPermissionState === "granted") {
+            state.clipboardPermissionState = "granted";
+            startClipboardWatcher();
+          } else {
+            window.clearTimeout(state.clipboardAutoTimer);
+            window.clearInterval(state.clipboardWatchTimer);
+            setStatus("已读取本次剪贴板；浏览器未授予持续权限，自动读取暂不可用。", "warn");
+          }
         }
       });
     }
