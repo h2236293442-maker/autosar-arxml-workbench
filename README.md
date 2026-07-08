@@ -1,5 +1,14 @@
 # AUTOSAR ARXML Workbench
 
+## 分支版本记录
+
+- `codex/clipboard-fuzzy-search-fix`：从 GitHub `origin/main` 恢复基础版本后，仅提交当前 `index.html` 的剪贴板与模糊搜索修复。SOME/IP 临时脚本、抓包服务和本地矩阵目录不纳入此分支。
+  - 剪贴板：首次进入工作区支持一次性启用提示；手动输入或清空筛选会临时暂停读取，之后按周期恢复；后台轮询只在浏览器授予持续权限时运行，避免权限弹窗反复出现。
+  - 搜索：增加模糊匹配和结果打分排序，优先名称完全匹配、前缀匹配、包含匹配和近似拼写，避免 `AIParkngSts` 误匹配到 `ABSA/IABSA`。
+  - Signal 物理含义：解析 `COMPU-METHOD` / `COMPU-SCALE` 和 `SYSTEM-SIGNAL` 关联，在 Inspector 中展示每个取值对应的物理含义。
+  - Signal 导出：新增 `*.signals.xlsx` 导出，保留 `Channel`、`Message`、`PDU`、`Signal`、`Value Meaning` 五列；每个 Signal 一行，支持自动换行、列宽/行高优化和纯数字范围清理。
+  - 手动选中保护：搜索后如果用户点击其他 Signal，剪贴板自动定位不会再把详情面板跳回旧信号；剪贴板内容变化或用户主动点击剪贴板按钮后可继续自动定位。
+
 ## 修改说明
 
 - 优化首页与工作区 UI：调整卡片宽度、高度、信息密度和 Inspector 面板布局，让页面更接近可上线产品形态。
@@ -21,6 +30,7 @@
   - `*.parsed.json`：结构化数据，适合二次处理
   - `*.search.txt`：紧凑检索索引，适合全文搜索
   - `*.report.md`：可读报告，适合评审
+  - `*.signals.xlsx`：Signal 清单，包含 Channel、Message、PDU、Signal 和每个值的物理含义
 - 提供单文件 Web Viewer，可在浏览器本地打开、拖拽 ARXML 进行可视化检索
 - 无需联网处理 ARXML，数据默认留在本机浏览器或本地脚本环境
 
