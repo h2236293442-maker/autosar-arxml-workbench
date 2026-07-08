@@ -2303,6 +2303,20 @@
       overflow: auto;
       display: block;
     }
+    .value-meaning-list {
+      display: grid;
+      gap: 6px;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .value-meaning-row {
+      display: grid;
+      grid-template-columns: minmax(44px, auto) 1fr;
+      gap: 8px;
+      align-items: start;
+      font-size: 12px;
+      line-height: 1.45;
+    }
     .table-note {
       margin-top: 10px;
       color: var(--muted);
@@ -4754,6 +4768,7 @@
             <button id="exportJsonBtn">导出 JSON</button>
             <button id="exportTxtBtn">导出 TXT</button>
             <button id="exportMdBtn">导出 MD</button>
+            <button id="exportSignalExcelBtn">导出 Signal Excel</button>
           </div>
           <div class="hint">说明：页面纯前端，本地浏览器内解析，不上传到服务器。支持拖拽或点击上传。</div>
           <div id="status" class="status">准备就绪：上传或粘贴 ARXML 开始本地解析。</div>
@@ -5055,6 +5070,10 @@
                 <div class="k">系统信号 / 备注</div>
                 <div id="detailSystem" class="v">-</div>
               </div>
+              <div class="detail-block">
+                <div class="k">每个值物理含义</div>
+                <div id="detailValueMeanings" class="v">-</div>
+              </div>
             </div>
           </div>
         </div>
@@ -5180,6 +5199,7 @@
       clipboardWatchTimer: 0,
       clipboardResumeTimer: 0,
       lastClipboardSignal: "",
+      ignoredClipboardSignal: "",
       clipboardAutoSuppressed: false,
       clipboardPrompting: false,
       clipboardPromptedThisPage: false,
@@ -5222,6 +5242,7 @@
       exportJsonBtn: document.getElementById("exportJsonBtn"),
       exportTxtBtn: document.getElementById("exportTxtBtn"),
       exportMdBtn: document.getElementById("exportMdBtn"),
+      exportSignalExcelBtn: document.getElementById("exportSignalExcelBtn"),
       searchInput: document.getElementById("searchInput"),
       typeFilterMenu: document.getElementById("typeFilterMenu"),
       typeFilterBtn: document.getElementById("typeFilterBtn"),
@@ -5284,6 +5305,7 @@
       detailPdus: document.getElementById("detailPdus"),
       detailFrames: document.getElementById("detailFrames"),
       detailSystem: document.getElementById("detailSystem"),
+      detailValueMeanings: document.getElementById("detailValueMeanings"),
       themeColorMeta: document.getElementById("themeColorMeta"),
       status: document.getElementById("status"),
       sFrame: document.getElementById("sFrame"),
@@ -5799,6 +5821,10 @@
           if (showMessageOnFail) setStatus("剪贴板内容不是信号名。", "warn");
           return false;
         }
+        if (options.auto && state.ignoredClipboardSignal) {
+          if (state.ignoredClipboardSignal === keyword) return false;
+          state.ignoredClipboardSignal = "";
+        }
         const alreadyFocused = state.lastClipboardSignal === keyword &&
           normalizeSignalName(el.searchInput?.value || "") === keyword &&
           normalizeSignalName(state.selectedRow?.name || "") === keyword;
@@ -5854,6 +5880,14 @@
         state.clipboardAutoSuppressed = false;
         startClipboardWatcher();
       }, CLIPBOARD_RESUME_DELAY_MS);
+    }
+
+    function ignoreCurrentClipboardSignalForManualSelection() {
+      const currentClipboardSignal = normalizeSignalName(state.lastClipboardSignal || "");
+      const currentSearchSignal = normalizeSignalName(el.searchInput?.value || "");
+      state.ignoredClipboardSignal = currentClipboardSignal || currentSearchSignal;
+      state.pendingClipboardSignal = "";
+      window.clearTimeout(state.clipboardAutoTimer);
     }
 
     async function maybeRequestClipboardAccessOnce() {
@@ -6298,6 +6332,68 @@
       return text(cur);
     }
 
+    function nodeDescText(doc, node) {
+      const descNode = childByLocalName(doc, node, "DESC");
+      if (!descNode) return "";
+      return Array.from(descNode.childNodes)
+        .map(n => (n.textContent || "").trim())
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    function parseCompuMethods(doc) {
+      const map = new Map();
+      const methods = xall(doc, doc, "//*[local-name()='COMPU-METHOD']");
+      for (const method of methods) {
+        const name = childText(doc, method, "SHORT-NAME");
+        if (!name) continue;
+        const scales = xall(doc, method, ".//*[local-name()='COMPU-INTERNAL-TO-PHYS']//*[local-name()='COMPU-SCALE']");
+        const valueTable = [];
+        for (const scale of scales) {
+          const lower = childText(doc, scale, "LOWER-LIMIT");
+          const upper = childText(doc, scale, "UPPER-LIMIT");
+          const vt = deepText(doc, scale, ["COMPU-CONST", "VT"]);
+          const v = deepText(doc, scale, ["COMPU-CONST", "V"]);
+          const desc = nodeDescText(doc, scale);
+          const meaning = vt || v || desc;
+          if (!meaning && !lower && !upper) continue;
+          valueTable.push({
+            lower: lower || "",
+            upper: upper || lower || "",
+            meaning: meaning || "",
+            description: desc || ""
+          });
+        }
+        map.set(name, {
+          name,
+          category: childText(doc, method, "CATEGORY") || "",
+          unit_ref: childText(doc, method, "UNIT-REF") || "",
+          value_table: valueTable
+        });
+      }
+      return map;
+    }
+
+    function parseSystemSignals(doc) {
+      const map = new Map();
+      const nodes = xall(doc, doc, "//*[local-name()='SYSTEM-SIGNAL']");
+      for (const sig of nodes) {
+        const name = childText(doc, sig, "SHORT-NAME");
+        if (!name) continue;
+        map.set(name, {
+          name,
+          compu_method_ref: deepText(doc, sig, [
+            "PHYSICAL-PROPS",
+            "SW-DATA-DEF-PROPS-VARIANTS",
+            "SW-DATA-DEF-PROPS-CONDITIONAL",
+            "COMPU-METHOD-REF"
+          ]),
+          description: nodeDescText(doc, sig)
+        });
+      }
+      return map;
+    }
+
     function parsePduTriggeringMap(doc) {
       const map = new Map();
       const triggerNodes = xall(doc, doc, "//*[local-name()='PDU-TRIGGERING']");
@@ -6654,14 +6750,7 @@
 
       const signalNodes = xall(doc, doc, "//*[local-name()='I-SIGNAL']");
       for (const sig of signalNodes) {
-        let descText = null;
-        const descNode = childByLocalName(doc, sig, "DESC");
-        if (descNode) {
-          const pieces = Array.from(descNode.childNodes)
-            .map(n => (n.textContent || "").trim())
-            .filter(Boolean);
-          if (pieces.length) descText = pieces.join("\n");
-        }
+        const descText = nodeDescText(doc, sig);
 
         signals.push({
           name: childText(doc, sig, "SHORT-NAME"),
@@ -6717,6 +6806,8 @@
     }
 
     function buildReport(fileName, doc) {
+      const compuMethods = parseCompuMethods(doc);
+      const systemSignals = parseSystemSignals(doc);
       const pduTriggeringMap = parsePduTriggeringMap(doc);
       const containerMembers = parseContainerMembers(doc, pduTriggeringMap);
       const { frames, framesByPdu } = parseCanFrames(doc, containerMembers);
@@ -6770,6 +6861,14 @@
       const signalMap = new Map();
       for (const s of signals) {
         if (s.name) {
+          const systemSignalName = basenameFromRef(s.system_signal_ref) || s.name;
+          const systemSignal = systemSignals.get(systemSignalName);
+          const compuRef = s.compu_method_ref || systemSignal?.compu_method_ref || "";
+          const compuMethod = compuMethods.get(basenameFromRef(compuRef) || "");
+          s.compu_method_ref = compuRef;
+          s.value_meanings = compuMethod?.value_table || [];
+          s.value_meaning_text = formatSignalValueMeanings(s.value_meanings);
+          if (!s.description && systemSignal?.description) s.description = systemSignal.description;
           s.directions = Array.from(signalDirectionsByName.get(s.name) || []).sort();
           signalMap.set(s.name, s);
         }
@@ -6902,6 +7001,272 @@
       return `${list.slice(0, maxVisible).join(", ")} +${list.length - maxVisible}`;
     }
 
+    function formatValueRange(item) {
+      const lower = String(item?.lower || "").trim();
+      const upper = String(item?.upper || "").trim();
+      if (lower && upper && lower !== upper) return `${lower}-${upper}`;
+      return lower || upper || "";
+    }
+
+    function formatSignalValueMeanings(valueMeanings) {
+      const list = Array.isArray(valueMeanings) ? valueMeanings : [];
+      return list
+        .map(item => {
+          const range = formatValueRange(item);
+          const meaning = String(item?.meaning || item?.description || "").trim();
+          if (!range && !meaning) return "";
+          if (range && !meaning) return range;
+          if (range && isPlainNumericText(meaning)) return range;
+          return range ? `${range} = ${meaning}` : meaning;
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    function isPlainNumericText(value) {
+      const v = String(value || "").trim();
+      if (!v) return false;
+      return /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(v);
+    }
+
+    function formatSignalMessageForExport(signal) {
+      const frames = Array.isArray(signal.frame_names) ? signal.frame_names.filter(Boolean) : [];
+      const ids = toHexList(signal.can_ids || []);
+      if (frames.length && ids.length) return `${frames.join("\n")}\n${ids.join(", ")}`;
+      if (frames.length) return frames.join("\n");
+      return ids.join(", ");
+    }
+
+    function xmlEscape(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&apos;");
+    }
+
+    function columnName(index) {
+      let n = index + 1;
+      let name = "";
+      while (n > 0) {
+        const mod = (n - 1) % 26;
+        name = String.fromCharCode(65 + mod) + name;
+        n = Math.floor((n - 1) / 26);
+      }
+      return name;
+    }
+
+    function signalExportRows(report) {
+      const rows = Array.isArray(report?.signals) ? report.signals : [];
+      return rows.map(sig => [
+        (sig.channel_names || []).join("\n"),
+        formatSignalMessageForExport(sig),
+        (sig.pdu_names || []).join("\n"),
+        sig.name || "",
+        sig.value_meaning_text || formatSignalValueMeanings(sig.value_meanings || [])
+      ]);
+    }
+
+    function estimateExcelRowHeight(cells) {
+      const maxLines = Math.max(1, ...cells.map(cell => String(cell || "").split(/\r?\n/).length));
+      return Math.min(220, Math.max(20, maxLines * 15 + 6));
+    }
+
+    function worksheetXml(headers, rows) {
+      const allRows = [headers, ...rows];
+      const sheetRows = allRows.map((cells, rowIndex) => {
+        const rowNumber = rowIndex + 1;
+        const styleIndex = rowIndex === 0 ? 1 : 2;
+        const height = estimateExcelRowHeight(cells);
+        const cellXml = cells.map((cell, colIndex) => {
+          const ref = `${columnName(colIndex)}${rowNumber}`;
+          const value = xmlEscape(cell);
+          return `<c r="${ref}" s="${styleIndex}" t="inlineStr"><is><t xml:space="preserve">${value}</t></is></c>`;
+        }).join("");
+        return `<row r="${rowNumber}" ht="${height}" customHeight="1">${cellXml}</row>`;
+      }).join("");
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>
+  <cols>
+    <col min="1" max="1" width="18" customWidth="1"/>
+    <col min="2" max="2" width="34" customWidth="1"/>
+    <col min="3" max="3" width="32" customWidth="1"/>
+    <col min="4" max="4" width="32" customWidth="1"/>
+    <col min="5" max="5" width="90" customWidth="1"/>
+  </cols>
+  <sheetData>${sheetRows}</sheetData>
+  <autoFilter ref="A1:E${Math.max(1, allRows.length)}"/>
+</worksheet>`;
+    }
+
+    function workbookXml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Signal" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+    }
+
+    function workbookRelsXml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+    }
+
+    function rootRelsXml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+    }
+
+    function contentTypesXml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+    }
+
+    function stylesXml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF5F4"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF999999"/></left><right style="thin"><color rgb="FF999999"/></right><top style="thin"><color rgb="FF999999"/></top><bottom style="thin"><color rgb="FF999999"/></bottom><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="3">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="49" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+    }
+
+    function makeCrc32Table() {
+      const table = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[i] = c >>> 0;
+      }
+      return table;
+    }
+
+    const CRC32_TABLE = makeCrc32Table();
+
+    function crc32(bytes) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < bytes.length; i++) {
+        crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+      }
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function writeUint16(bytes, value) {
+      bytes.push(value & 0xFF, (value >>> 8) & 0xFF);
+    }
+
+    function writeUint32(bytes, value) {
+      bytes.push(value & 0xFF, (value >>> 8) & 0xFF, (value >>> 16) & 0xFF, (value >>> 24) & 0xFF);
+    }
+
+    function appendBytes(target, source) {
+      for (let i = 0; i < source.length; i += 8192) {
+        target.push(...source.slice(i, i + 8192));
+      }
+    }
+
+    function dosDateTime(date = new Date()) {
+      const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+      const dosDate = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+      return { time, date: dosDate };
+    }
+
+    function makeZip(files) {
+      const encoder = new TextEncoder();
+      const output = [];
+      const central = [];
+      const now = dosDateTime();
+      let offset = 0;
+      for (const file of files) {
+        const nameBytes = encoder.encode(file.name);
+        const dataBytes = encoder.encode(file.content);
+        const crc = crc32(dataBytes);
+        const local = [];
+        writeUint32(local, 0x04034B50);
+        writeUint16(local, 20);
+        writeUint16(local, 0x0800);
+        writeUint16(local, 0);
+        writeUint16(local, now.time);
+        writeUint16(local, now.date);
+        writeUint32(local, crc);
+        writeUint32(local, dataBytes.length);
+        writeUint32(local, dataBytes.length);
+        writeUint16(local, nameBytes.length);
+        writeUint16(local, 0);
+        appendBytes(output, local);
+        appendBytes(output, nameBytes);
+        appendBytes(output, dataBytes);
+
+        const centralFile = [];
+        writeUint32(centralFile, 0x02014B50);
+        writeUint16(centralFile, 20);
+        writeUint16(centralFile, 20);
+        writeUint16(centralFile, 0x0800);
+        writeUint16(centralFile, 0);
+        writeUint16(centralFile, now.time);
+        writeUint16(centralFile, now.date);
+        writeUint32(centralFile, crc);
+        writeUint32(centralFile, dataBytes.length);
+        writeUint32(centralFile, dataBytes.length);
+        writeUint16(centralFile, nameBytes.length);
+        writeUint16(centralFile, 0);
+        writeUint16(centralFile, 0);
+        writeUint16(centralFile, 0);
+        writeUint16(centralFile, 0);
+        writeUint32(centralFile, 0);
+        writeUint32(centralFile, offset);
+        appendBytes(central, centralFile);
+        appendBytes(central, nameBytes);
+        offset = output.length;
+      }
+      const centralOffset = output.length;
+      appendBytes(output, central);
+      const end = [];
+      writeUint32(end, 0x06054B50);
+      writeUint16(end, 0);
+      writeUint16(end, 0);
+      writeUint16(end, files.length);
+      writeUint16(end, files.length);
+      writeUint32(end, central.length);
+      writeUint32(end, centralOffset);
+      writeUint16(end, 0);
+      appendBytes(output, end);
+      return new Uint8Array(output);
+    }
+
+    function toSignalXlsxBlob(report) {
+      const headers = ["Channel", "Message", "PDU", "Signal", "Value Meaning"];
+      const rows = signalExportRows(report);
+      const zipBytes = makeZip([
+        { name: "[Content_Types].xml", content: contentTypesXml() },
+        { name: "_rels/.rels", content: rootRelsXml() },
+        { name: "xl/workbook.xml", content: workbookXml() },
+        { name: "xl/_rels/workbook.xml.rels", content: workbookRelsXml() },
+        { name: "xl/styles.xml", content: stylesXml() },
+        { name: "xl/worksheets/sheet1.xml", content: worksheetXml(headers, rows) }
+      ]);
+      return new Blob([zipBytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    }
+
     function buildSearchRows(report) {
       const rows = [];
       const baseRows = [];
@@ -6950,6 +7315,8 @@
           system: sig.system_signal_ref || "",
           full_system: sig.system_signal_ref || "",
           description: sig.description || "",
+          value_meanings: sig.value_meanings || [],
+          value_meaning_text: sig.value_meaning_text || "",
           channel_meta: sig.channel_meta || {}
         });
       }
@@ -7030,7 +7397,8 @@
           (row.message_ids || []).join(" "),
           toHexList(row.message_ids || []).join(" "),
           (row.directions || []).join(" "),
-          row.description || ""
+          row.description || "",
+          row.value_meaning_text || ""
         ].join(" ").toLowerCase();
       }
       return [
@@ -7107,6 +7475,10 @@
 
     function downloadFile(fileName, content, mime = "text/plain;charset=utf-8") {
       const blob = new Blob(["\uFEFF", content], { type: mime });
+      downloadBlob(fileName, blob);
+    }
+
+    function downloadBlob(fileName, blob) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -7272,6 +7644,16 @@
       return `<div class="cell-list" title="${title}">${visible.map(v => `<span class="cell-token compact">${escapeHtml(v)}</span>`).join("")}${more}</div>`;
     }
 
+    function formatValueMeaningBlock(valueMeanings) {
+      const list = Array.isArray(valueMeanings) ? valueMeanings : [];
+      if (!list.length) return "";
+      return `<div class="value-meaning-list">${list.map(item => {
+        const range = formatValueRange(item);
+        const meaning = item?.meaning || item?.description || "";
+        return `<div class="value-meaning-row"><span class="cell-token compact">${escapeHtml(range || "-")}</span><span>${escapeHtml(meaning)}</span></div>`;
+      }).join("")}</div>`;
+    }
+
     function renderInspector(row) {
       if (!row) {
         el.detailEmpty.classList.remove("hidden");
@@ -7295,6 +7677,10 @@
       const detailSystem = row.full_system || row.system || "";
       el.detailSystem.textContent = detailSystem || "未提供";
       el.detailSystem.setAttribute("title", detailSystem);
+      const valueMeaningHtml = row.type === "SIGNAL" ? formatValueMeaningBlock(row.value_meanings || []) : "";
+      if (el.detailValueMeanings) {
+        el.detailValueMeanings.innerHTML = valueMeaningHtml || '<span class="v">未提供</span>';
+      }
     }
 
     function renderRows(rows, total, limit) {
@@ -7469,6 +7855,7 @@
       if (!rowEl) return;
       const row = state.renderedRows.find(item => item.rowKey === rowEl.dataset.rowKey);
       if (!row) return;
+      ignoreCurrentClipboardSignalForManualSelection();
       state.selectedRow = row;
       renderRows(state.renderedRows, state.filteredRows.length, parseInt(el.limitFilter.value, 10) || 500);
       renderInspector(row);
@@ -7495,6 +7882,14 @@
       downloadFile(`${state.fileName || "arxml"}.report.md`, toMarkdown(state.report), "text/markdown;charset=utf-8");
       setStatus("已导出 MD。", "ok");
     });
+
+    if (el.exportSignalExcelBtn) {
+      el.exportSignalExcelBtn.addEventListener("click", () => {
+        if (!state.report) return setStatus("请先解析 ARXML 文件。", "warn");
+        downloadBlob(`${state.fileName || "arxml"}.signals.xlsx`, toSignalXlsxBlob(state.report));
+        setStatus("已导出 Signal XLSX。", "ok");
+      });
+    }
     document.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-copy-target]");
       if (!btn) return;
@@ -7607,6 +8002,7 @@
     }
     if (el.clipboardFocusBtn) {
       el.clipboardFocusBtn.addEventListener("click", async () => {
+        state.ignoredClipboardSignal = "";
         state.clipboardAutoSuppressed = false;
         window.clearTimeout(state.clipboardResumeTimer);
         state.clipboardPermissionState = "";
