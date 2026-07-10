@@ -7115,10 +7115,11 @@
 
     function formatSignalMessageForExport(signal) {
       const frames = Array.isArray(signal.frame_names) ? signal.frame_names.filter(Boolean) : [];
-      const ids = toHexList(signal.can_ids || []);
-      if (frames.length && ids.length) return `${frames.join("\n")}\n${ids.join(", ")}`;
-      if (frames.length) return frames.join("\n");
-      return ids.join(", ");
+      return frames.join("\n");
+    }
+
+    function formatSignalMessageIdForExport(signal) {
+      return toHexList(signal.can_ids || []).join("\n");
     }
 
     function xmlEscape(value) {
@@ -7146,6 +7147,7 @@
       return rows.map(sig => [
         (sig.channel_names || []).join("\n"),
         formatSignalMessageForExport(sig),
+        formatSignalMessageIdForExport(sig),
         (sig.pdu_names || []).join("\n"),
         sig.name || "",
         sig.value_meaning_text || formatSignalValueMeanings(sig.value_meanings || [])
@@ -7176,12 +7178,13 @@
   <cols>
     <col min="1" max="1" width="18" customWidth="1"/>
     <col min="2" max="2" width="34" customWidth="1"/>
-    <col min="3" max="3" width="32" customWidth="1"/>
+    <col min="3" max="3" width="14" customWidth="1"/>
     <col min="4" max="4" width="32" customWidth="1"/>
-    <col min="5" max="5" width="90" customWidth="1"/>
+    <col min="5" max="5" width="32" customWidth="1"/>
+    <col min="6" max="6" width="90" customWidth="1"/>
   </cols>
   <sheetData>${sheetRows}</sheetData>
-  <autoFilter ref="A1:E${Math.max(1, allRows.length)}"/>
+  <autoFilter ref="A1:F${Math.max(1, allRows.length)}"/>
 </worksheet>`;
     }
 
@@ -7338,7 +7341,7 @@
     }
 
     function toSignalXlsxBlob(report) {
-      const headers = ["Channel", "Message", "PDU", "Signal", "Value Meaning"];
+      const headers = ["Channel", "Message", "Message ID", "PDU", "Signal", "Value Meaning"];
       const rows = signalExportRows(report);
       const zipBytes = makeZip([
         { name: "[Content_Types].xml", content: contentTypesXml() },
