@@ -2305,11 +2305,13 @@
       max-height: 240px;
       overflow: auto;
     }
+    .object-jump,
     .signal-jump {
       border: 1px solid rgba(15, 118, 110, 0.18);
       cursor: pointer;
       font: inherit;
     }
+    .object-jump:hover,
     .signal-jump:hover {
       border-color: rgba(15, 118, 110, 0.38);
       color: var(--accent-strong);
@@ -5800,6 +5802,43 @@
       return true;
     }
 
+    function focusObjectByName(type, name, options = {}) {
+      const normalizedType = String(type || "").toUpperCase();
+      const keyword = normalizeSignalName(name);
+      if (!keyword || !["FRAME", "PDU", "SIGNAL", "SIGNAL_GROUP"].includes(normalizedType)) return false;
+      if (normalizedType === "SIGNAL") return focusSignalByName(keyword, options);
+      if (getCurrentRoute() !== "/workspace") {
+        window.location.hash = "#/workspace";
+      }
+      if (el.searchInput) el.searchInput.value = keyword;
+      if (el.typeFilter && [...el.typeFilter.options].some(o => o.value === normalizedType)) {
+        setTypeFilterValue(normalizedType);
+      }
+      applyFilters();
+      const row = state.filteredRows.find(r => r.type === normalizedType && r.name === keyword) ||
+        state.filteredRows.find(r => r.name === keyword) ||
+        null;
+      if (!row) {
+        setStatus(`未找到对象：${keyword}`, "warn");
+        return false;
+      }
+      state.selectedRow = row;
+      const limit = parseInt(el.limitFilter.value, 10) || 500;
+      renderRows(state.filteredRows.slice(0, limit), state.filteredRows.length, limit);
+      renderInspector(row);
+      if (options.scroll) {
+        requestAnimationFrame(() => {
+          try {
+            const safe = String(row.rowKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+            const rowEl = document.querySelector(`tr[data-row-key="${safe}"]`);
+            if (rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          } catch (_) {}
+        });
+      }
+      setStatus(`已定位对象：${row.name || keyword}`, "ok");
+      return true;
+    }
+
     async function getClipboardPermissionState() {
       if (!navigator.clipboard || !navigator.clipboard.readText) return "unsupported";
       if (!navigator.permissions || !navigator.permissions.query) return state.clipboardPermissionState || "unknown";
@@ -7694,6 +7733,14 @@
       )).join("")}</div>`;
     }
 
+    function formatObjectJumpList(list, type) {
+      const values = Array.from(new Set(Array.isArray(list) ? list.filter(Boolean) : [])).sort();
+      if (!values.length) return "";
+      return `<div class="detail-signal-list" title="${escapeHtml(values.join(", "))}">${values.map(name => (
+        `<button type="button" class="cell-token compact object-jump" data-object-type="${escapeHtml(type)}" data-object-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+      )).join("")}</div>`;
+    }
+
     function formatValueMeaningBlock(valueMeanings) {
       const list = Array.isArray(valueMeanings) ? valueMeanings : [];
       if (!list.length) return "";
@@ -7723,8 +7770,8 @@
       el.detailDirection.textContent = formatDirection(row.directions || []) || "未知";
       el.detailMessageId.innerHTML = formatListCell(toHexList(row.message_ids || []), "", 8) || '<span class="v">未提供</span>';
       el.detailChannels.innerHTML = formatListCell(row.channels || [], "", 8) || '<span class="v">未提供</span>';
-      el.detailPdus.innerHTML = formatListCell(row.pdus || [], "", 12) || '<span class="v">未关联</span>';
-      el.detailFrames.innerHTML = formatListCell(row.frames || [], "", 12) || '<span class="v">未关联</span>';
+      el.detailPdus.innerHTML = formatObjectJumpList(row.pdus || [], "PDU") || '<span class="v">未关联</span>';
+      el.detailFrames.innerHTML = formatObjectJumpList(row.frames || [], "FRAME") || '<span class="v">未关联</span>';
       if (el.detailSignals) {
         el.detailSignals.innerHTML = formatSignalJumpList(row.signals || []) || '<span class="v">未关联</span>';
       }
@@ -7920,10 +7967,21 @@
     });
     if (el.detailContent) {
       el.detailContent.addEventListener("click", (e) => {
-        const button = e.target.closest("[data-signal-name]");
-        if (!button) return;
-        suppressClipboardAutoFocus();
-        focusSignalByName(button.getAttribute("data-signal-name") || "", { scroll: true, force: true });
+        const signalButton = e.target.closest("[data-signal-name]");
+        if (signalButton) {
+          suppressClipboardAutoFocus();
+          focusSignalByName(signalButton.getAttribute("data-signal-name") || "", { scroll: true, force: true });
+          return;
+        }
+        const objectButton = e.target.closest("[data-object-type][data-object-name]");
+        if (objectButton) {
+          suppressClipboardAutoFocus();
+          focusObjectByName(
+            objectButton.getAttribute("data-object-type") || "",
+            objectButton.getAttribute("data-object-name") || "",
+            { scroll: true, force: true }
+          );
+        }
       });
     }
 

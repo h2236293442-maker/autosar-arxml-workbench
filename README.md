@@ -8,7 +8,7 @@
   - Signal 物理含义：解析 `COMPU-METHOD` / `COMPU-SCALE` 和 `SYSTEM-SIGNAL` 关联，在 Inspector 中展示每个取值对应的物理含义。
   - Signal 导出：新增 `*.signals.xlsx` 导出，保留 `Channel`、`Message`、`PDU`、`Signal`、`Value Meaning` 五列；每个 Signal 一行，支持自动换行、列宽/行高优化和纯数字范围清理。
   - 手动选中保护：搜索后如果用户点击其他 Signal，剪贴板自动定位不会再把详情面板跳回旧信号；剪贴板内容变化或用户主动点击剪贴板按钮后可继续自动定位。
-  - Message/PDU 查看 Signal：点击 Frame(Message) 或 PDU 后，Inspector 会展示其包含的全部 Signal，并支持从列表中点击 Signal 跳转到对应详情。
+  - Message/PDU 查看 Signal：点击 Frame(Message) 或 PDU 后，Inspector 会展示其包含的全部 Signal，并支持从 Signal、PDU、Frame 关联列表中点击跳转到对应详情。
 
 ## 修改说明
 
