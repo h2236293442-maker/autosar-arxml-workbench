@@ -2298,6 +2298,23 @@
     .detail-block .cell-list {
       max-height: none;
     }
+    .detail-signal-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 240px;
+      overflow: auto;
+    }
+    .signal-jump {
+      border: 1px solid rgba(15, 118, 110, 0.18);
+      cursor: pointer;
+      font: inherit;
+    }
+    .signal-jump:hover {
+      border-color: rgba(15, 118, 110, 0.38);
+      color: var(--accent-strong);
+      background: rgba(20, 184, 166, 0.10);
+    }
     #detailSystem {
       max-height: 180px;
       overflow: auto;
@@ -5067,6 +5084,10 @@
                 <div id="detailFrames"></div>
               </div>
               <div class="detail-block">
+                <div class="k">包含 Signal</div>
+                <div id="detailSignals"></div>
+              </div>
+              <div class="detail-block">
                 <div class="k">系统信号 / 备注</div>
                 <div id="detailSystem" class="v">-</div>
               </div>
@@ -5304,6 +5325,7 @@
       detailChannels: document.getElementById("detailChannels"),
       detailPdus: document.getElementById("detailPdus"),
       detailFrames: document.getElementById("detailFrames"),
+      detailSignals: document.getElementById("detailSignals"),
       detailSystem: document.getElementById("detailSystem"),
       detailValueMeanings: document.getElementById("detailValueMeanings"),
       themeColorMeta: document.getElementById("themeColorMeta"),
@@ -7274,8 +7296,16 @@
     function buildSearchRows(report) {
       const rows = [];
       const baseRows = [];
+      const signalsByPdu = new Map();
+      for (const pdu of report.pdus || []) {
+        signalsByPdu.set(
+          pdu.name || "",
+          Array.from(new Set((pdu.signal_mappings || []).map(x => x.signal_name).filter(Boolean))).sort()
+        );
+      }
       for (const frame of report.frames) {
         const pduNames = getFrameMappedPduNames(frame);
+        const signalNames = Array.from(new Set(pduNames.flatMap(name => signalsByPdu.get(name) || []))).sort();
         baseRows.push({
           type: "FRAME",
           name: frame.name || "",
@@ -7284,13 +7314,15 @@
           message_ids: frame.can_ids || [],
           channels: frame.channel_names || [],
           pdus: pduNames,
+          signals: signalNames,
           frames: [frame.name || ""].filter(Boolean),
-          system: "",
+          system: summarizeValues(signalNames, 4),
+          full_system: signalNames.join(", "),
           channel_meta: frame.channel_meta || {}
         });
       }
       for (const pdu of report.pdus) {
-        const signalNames = Array.from(new Set((pdu.signal_mappings || []).map(x => x.signal_name).filter(Boolean)));
+        const signalNames = signalsByPdu.get(pdu.name || "") || [];
         const fullSystem = signalNames.join(", ");
         baseRows.push({
           type: "PDU",
@@ -7300,6 +7332,7 @@
           message_ids: pdu.can_ids || [],
           channels: pdu.channel_names || [],
           pdus: [pdu.name || ""].filter(Boolean),
+          signals: signalNames,
           frames: pdu.frame_names || [],
           system: summarizeValues(signalNames, 4),
           full_system: fullSystem,
@@ -7315,6 +7348,7 @@
           message_ids: sig.can_ids || [],
           channels: sig.channel_names || [],
           pdus: sig.pdu_names || [],
+          signals: [sig.name || ""].filter(Boolean),
           frames: sig.frame_names || [],
           system: sig.system_signal_ref || "",
           full_system: sig.system_signal_ref || "",
@@ -7335,6 +7369,7 @@
           message_ids: grp.can_ids || [],
           channels: grp.channel_names || [],
           pdus: grp.pdu_names || [],
+          signals: signalNames,
           frames: grp.frame_names || [],
           system: summarizeValues(signalNames, 4),
           full_system: fullSystem,
@@ -7372,6 +7407,7 @@
           row.name,
           row.length,
           (row.pdus || []).join(" "),
+          (row.signals || []).join(" "),
           (row.channels || []).join(" "),
           (row.message_ids || []).join(" "),
           toHexList(row.message_ids || []).join(" "),
@@ -7383,6 +7419,7 @@
           row.name,
           row.length,
           (row.frames || []).join(" "),
+          (row.signals || []).join(" "),
           (row.channels || []).join(" "),
           (row.message_ids || []).join(" "),
           toHexList(row.message_ids || []).join(" "),
@@ -7408,6 +7445,7 @@
       return [
         row.name,
         (row.pdus || []).join(" "),
+        (row.signals || []).join(" "),
         (row.frames || []).join(" "),
         (row.channels || []).join(" "),
         (row.message_ids || []).join(" "),
@@ -7648,6 +7686,14 @@
       return `<div class="cell-list" title="${title}">${visible.map(v => `<span class="cell-token compact">${escapeHtml(v)}</span>`).join("")}${more}</div>`;
     }
 
+    function formatSignalJumpList(list) {
+      const values = Array.from(new Set(Array.isArray(list) ? list.filter(Boolean) : [])).sort();
+      if (!values.length) return "";
+      return `<div class="detail-signal-list" title="${escapeHtml(values.join(", "))}">${values.map(name => (
+        `<button type="button" class="cell-token compact signal-jump" data-signal-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+      )).join("")}</div>`;
+    }
+
     function formatValueMeaningBlock(valueMeanings) {
       const list = Array.isArray(valueMeanings) ? valueMeanings : [];
       if (!list.length) return "";
@@ -7665,6 +7711,7 @@
         el.detailTitle.textContent = "结果详情面板";
         el.detailSubtitle.textContent = "点击表格中的任意一行，查看该对象的结构化摘要。";
         el.detailTypeTag.innerHTML = "";
+        if (el.detailSignals) el.detailSignals.innerHTML = "";
         return;
       }
       el.detailEmpty.classList.add("hidden");
@@ -7678,6 +7725,9 @@
       el.detailChannels.innerHTML = formatListCell(row.channels || [], "", 8) || '<span class="v">未提供</span>';
       el.detailPdus.innerHTML = formatListCell(row.pdus || [], "", 12) || '<span class="v">未关联</span>';
       el.detailFrames.innerHTML = formatListCell(row.frames || [], "", 12) || '<span class="v">未关联</span>';
+      if (el.detailSignals) {
+        el.detailSignals.innerHTML = formatSignalJumpList(row.signals || []) || '<span class="v">未关联</span>';
+      }
       const detailSystem = row.full_system || row.system || "";
       el.detailSystem.textContent = detailSystem || "未提供";
       el.detailSystem.setAttribute("title", detailSystem);
@@ -7868,6 +7918,14 @@
       renderRows(state.renderedRows, state.filteredRows.length, parseInt(el.limitFilter.value, 10) || 500);
       renderInspector(row);
     });
+    if (el.detailContent) {
+      el.detailContent.addEventListener("click", (e) => {
+        const button = e.target.closest("[data-signal-name]");
+        if (!button) return;
+        suppressClipboardAutoFocus();
+        focusSignalByName(button.getAttribute("data-signal-name") || "", { scroll: true, force: true });
+      });
+    }
 
     el.exportJsonBtn.addEventListener("click", () => {
       if (!state.report) return setStatus("请先解析 ARXML 文件。", "warn");
