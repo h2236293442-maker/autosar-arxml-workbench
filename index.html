@@ -5890,6 +5890,10 @@
       window.clearTimeout(state.clipboardAutoTimer);
     }
 
+    function ignoreClipboardForManualFilterChange() {
+      ignoreCurrentClipboardSignalForManualSelection();
+    }
+
     async function maybeRequestClipboardAccessOnce() {
       if (getCurrentRoute() !== "/workspace") return false;
       if (state.clipboardAutoSuppressed) return false;
@@ -7823,18 +7827,22 @@
       rememberSearch(el.searchInput.value || "");
     });
     el.typeFilter.addEventListener("change", () => {
+      ignoreClipboardForManualFilterChange();
       setTypeFilterValue(el.typeFilter.value);
       applyFilters();
     });
     el.directionFilter.addEventListener("change", () => {
+      ignoreClipboardForManualFilterChange();
       setDirectionFilterValue(el.directionFilter.value);
       applyFilters();
     });
     el.channelFilter.addEventListener("change", () => {
+      ignoreClipboardForManualFilterChange();
       setChannelFilterValue(el.channelFilter.value);
       applyFilters();
     });
     el.limitFilter.addEventListener("change", () => {
+      ignoreClipboardForManualFilterChange();
       setLimitFilterValue(el.limitFilter.value);
       applyFilters();
     });
@@ -7937,6 +7945,7 @@
       el.typeFilterOptions.addEventListener("click", (e) => {
         const option = e.target.closest("[data-type-filter]");
         if (!option) return;
+        ignoreClipboardForManualFilterChange();
         setTypeFilterValue(option.getAttribute("data-type-filter") || "all");
         toggleTypeFilterMenu(false);
         applyFilters();
@@ -7952,6 +7961,7 @@
       el.directionFilterOptions.addEventListener("click", (e) => {
         const option = e.target.closest("[data-direction-filter]");
         if (!option) return;
+        ignoreClipboardForManualFilterChange();
         setDirectionFilterValue(option.getAttribute("data-direction-filter") || "all");
         toggleDirectionFilterMenu(false);
         applyFilters();
@@ -7967,6 +7977,7 @@
       el.channelFilterOptions.addEventListener("click", (e) => {
         const option = e.target.closest("[data-channel-filter]");
         if (!option) return;
+        ignoreClipboardForManualFilterChange();
         setChannelFilterValue(option.getAttribute("data-channel-filter") || "all");
         toggleChannelFilterMenu(false);
         applyFilters();
@@ -7982,6 +7993,7 @@
       el.limitFilterOptions.addEventListener("click", (e) => {
         const option = e.target.closest("[data-limit-filter]");
         if (!option) return;
+        ignoreClipboardForManualFilterChange();
         setLimitFilterValue(option.getAttribute("data-limit-filter") || "500");
         toggleLimitFilterMenu(false);
         applyFilters();
