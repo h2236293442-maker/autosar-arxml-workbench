@@ -6473,6 +6473,19 @@
       return map;
     }
 
+    function parseSecuredPduPayloads(doc, pduTriggeringMap) {
+      const map = new Map();
+      const nodes = xall(doc, doc, "//*[local-name()='SECURED-I-PDU']");
+      for (const pdu of nodes) {
+        const securedName = childText(doc, pdu, "SHORT-NAME");
+        const payloadRef = childText(doc, pdu, "PAYLOAD-REF");
+        const payloadTriggerName = basenameFromRef(payloadRef);
+        if (!securedName || !payloadTriggerName) continue;
+        map.set(securedName, pduTriggeringMap.get(payloadTriggerName) || payloadTriggerName);
+      }
+      return map;
+    }
+
     function parseContainerMembers(doc, pduTriggeringMap) {
       const containerMembers = new Map();
       const containerNodes = xall(doc, doc, "//*[local-name()='CONTAINER-I-PDU']");
@@ -6496,7 +6509,7 @@
       return containerMembers;
     }
 
-    function parseCanFrames(doc, containerMembers) {
+    function parseCanFrames(doc, containerMembers, securedPduPayloads) {
       const frames = [];
       const framesByPdu = new Map();
       const frameNodes = xall(doc, doc, "//*[local-name()='CAN-FRAME']");
@@ -6514,12 +6527,17 @@
             pduDest === "CONTAINER-I-PDU" && pduName
               ? (containerMembers.get(pduName) || [])
               : [];
+          const securedPayloadPduName =
+            pduDest === "SECURED-I-PDU" && pduName
+              ? (securedPduPayloads.get(pduName) || null)
+              : null;
           const row = {
             mapping_name: childText(doc, mp, "SHORT-NAME"),
             pdu_ref: pduRef,
             pdu_name: pduName,
             pdu_dest: pduDest,
             contained_pdu_names: containedPduNames,
+            secured_payload_pdu_name: securedPayloadPduName,
             start_position: childText(doc, mp, "START-POSITION"),
             packing_byte_order: childText(doc, mp, "PACKING-BYTE-ORDER")
           };
@@ -6533,6 +6551,10 @@
               if (!framesByPdu.has(memberPdu)) framesByPdu.set(memberPdu, new Set());
               framesByPdu.get(memberPdu).add(frameName);
             }
+          }
+          if (frameName && securedPayloadPduName) {
+            if (!framesByPdu.has(securedPayloadPduName)) framesByPdu.set(securedPayloadPduName, new Set());
+            framesByPdu.get(securedPayloadPduName).add(frameName);
           }
         }
         frames.push({
@@ -6863,6 +6885,7 @@
             const contained = Array.isArray(x.contained_pdu_names) ? x.contained_pdu_names : [];
             // Container-I-PDU present: show only expanded member PDUs, hide container name.
             if (contained.length > 0) return contained;
+            if (x.secured_payload_pdu_name) return [x.secured_payload_pdu_name];
             const direct = x.pdu_name ? [x.pdu_name] : [];
             return direct;
           }).filter(Boolean)
@@ -6874,8 +6897,9 @@
       const compuMethods = parseCompuMethods(doc);
       const systemSignals = parseSystemSignals(doc);
       const pduTriggeringMap = parsePduTriggeringMap(doc);
+      const securedPduPayloads = parseSecuredPduPayloads(doc, pduTriggeringMap);
       const containerMembers = parseContainerMembers(doc, pduTriggeringMap);
-      const { frames, framesByPdu } = parseCanFrames(doc, containerMembers);
+      const { frames, framesByPdu } = parseCanFrames(doc, containerMembers, securedPduPayloads);
       const { channelsByFrame, idsByFrame, directionsByFrame, channelMetaByFrame } = parseCanChannels(doc);
       const { pdus, signalToPdus, groupToPdus } = parsePdus(doc);
       const signalDirectionsByName = parseSignalDirections(doc);
