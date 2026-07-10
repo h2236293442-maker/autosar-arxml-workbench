@@ -6542,19 +6542,14 @@
             packing_byte_order: childText(doc, mp, "PACKING-BYTE-ORDER")
           };
           pduMappings.push(row);
-          if (frameName && pduName) {
-            if (!framesByPdu.has(pduName)) framesByPdu.set(pduName, new Set());
-            framesByPdu.get(pduName).add(frameName);
-          }
-          if (frameName && containedPduNames.length) {
-            for (const memberPdu of containedPduNames) {
-              if (!framesByPdu.has(memberPdu)) framesByPdu.set(memberPdu, new Set());
-              framesByPdu.get(memberPdu).add(frameName);
+          const mappedPduNames = containedPduNames.length
+            ? containedPduNames
+            : (securedPayloadPduName ? [securedPayloadPduName] : [pduName].filter(Boolean));
+          if (frameName) {
+            for (const mappedPduName of mappedPduNames) {
+              if (!framesByPdu.has(mappedPduName)) framesByPdu.set(mappedPduName, new Set());
+              framesByPdu.get(mappedPduName).add(frameName);
             }
-          }
-          if (frameName && securedPayloadPduName) {
-            if (!framesByPdu.has(securedPayloadPduName)) framesByPdu.set(securedPayloadPduName, new Set());
-            framesByPdu.get(securedPayloadPduName).add(frameName);
           }
         }
         frames.push({
