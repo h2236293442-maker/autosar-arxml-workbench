@@ -7164,8 +7164,21 @@
 
     function signalExportChannels(signal) {
       const channels = Object.keys(signal.channel_meta || {});
-      if (channels.length) return channels.sort();
-      return Array.from(new Set(signal.channel_names || [])).filter(Boolean).sort();
+      if (channels.length) return normalizeExportChannels(channels);
+      return normalizeExportChannels(signal.channel_names || []);
+    }
+
+    function normalizeExportChannels(channels) {
+      return Array.from(
+        new Set(
+          (channels || []).flatMap(channel =>
+            String(channel || "")
+              .split(/[\s,;，；、/]+/)
+              .map(part => part.trim())
+              .filter(part => part && isDisplayCanChannelName(part))
+          )
+        )
+      ).sort();
     }
 
     function signalExportValueMeaning(signal) {
