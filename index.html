@@ -7191,7 +7191,6 @@
       for (const sig of rows) {
         const channels = signalExportChannels(sig);
         if (!channels.length) {
-          exportRows.push(signalExportRow(sig, "", frameByName, pduByName));
           continue;
         }
         for (const channel of channels) {
