@@ -6571,7 +6571,7 @@
       const channelNodes = xall(doc, doc, "//*[local-name()='CAN-PHYSICAL-CHANNEL']");
       for (const ch of channelNodes) {
         const channelName = childText(doc, ch, "SHORT-NAME");
-        if (!channelName) continue;
+        if (!channelName || !isDisplayCanChannelName(channelName)) continue;
         const triggerNodes = xall(ch.ownerDocument, ch, ".//*[local-name()='CAN-FRAME-TRIGGERING']");
         for (const tr of triggerNodes) {
           const frameRef = childText(doc, tr, "FRAME-REF");
@@ -6614,6 +6614,10 @@
         }
       }
       return { channelsByFrame, idsByFrame, directionsByFrame, channelMetaByFrame };
+    }
+
+    function isDisplayCanChannelName(channelName) {
+      return /CAN/i.test(String(channelName || ""));
     }
 
     function parsePdus(doc) {
