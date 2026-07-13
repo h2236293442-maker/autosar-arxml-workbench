@@ -7135,13 +7135,70 @@
       return /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(v);
     }
 
-    function formatSignalMessageForExport(signal) {
+    function formatSignalMessageForExport(signal, channelName = "", frameByName = new Map()) {
       const frames = Array.isArray(signal.frame_names) ? signal.frame_names.filter(Boolean) : [];
-      return frames.join("\n");
+      if (!channelName) return frames.join("\n");
+      const scopedFrames = frames.filter(frameName => objectHasChannel(frameByName.get(frameName), channelName));
+      return (scopedFrames.length ? scopedFrames : frames).join("\n");
     }
 
-    function formatSignalMessageIdForExport(signal) {
+    function formatSignalMessageIdForExport(signal, channelName = "") {
+      if (channelName && signal.channel_meta && signal.channel_meta[channelName]) {
+        return toHexList(signal.channel_meta[channelName].can_ids || []).join("\n");
+      }
       return toHexList(signal.can_ids || []).join("\n");
+    }
+
+    function formatSignalPdusForExport(signal, channelName = "", pduByName = new Map()) {
+      const pdus = Array.isArray(signal.pdu_names) ? signal.pdu_names.filter(Boolean) : [];
+      if (!channelName) return pdus.join("\n");
+      const scopedPdus = pdus.filter(pduName => objectHasChannel(pduByName.get(pduName), channelName));
+      return (scopedPdus.length ? scopedPdus : pdus).join("\n");
+    }
+
+    function objectHasChannel(obj, channelName) {
+      if (!obj || !channelName) return false;
+      if (obj.channel_meta && obj.channel_meta[channelName]) return true;
+      return Array.isArray(obj.channel_names) && obj.channel_names.includes(channelName);
+    }
+
+    function signalExportChannels(signal) {
+      const channels = Object.keys(signal.channel_meta || {});
+      if (channels.length) return channels.sort();
+      return Array.from(new Set(signal.channel_names || [])).filter(Boolean).sort();
+    }
+
+    function signalExportValueMeaning(signal) {
+      return signal.value_meaning_text || formatSignalValueMeanings(signal.value_meanings || []);
+    }
+
+    function signalExportRow(signal, channelName, frameByName, pduByName) {
+      return [
+        channelName || "",
+        formatSignalMessageForExport(signal, channelName, frameByName),
+        formatSignalMessageIdForExport(signal, channelName),
+        formatSignalPdusForExport(signal, channelName, pduByName),
+        signal.name || "",
+        signalExportValueMeaning(signal)
+      ];
+    }
+
+    function signalExportRows(report) {
+      const rows = Array.isArray(report?.signals) ? report.signals : [];
+      const frameByName = new Map((report?.frames || []).map(frame => [frame.name, frame]));
+      const pduByName = new Map((report?.pdus || []).map(pdu => [pdu.name, pdu]));
+      const exportRows = [];
+      for (const sig of rows) {
+        const channels = signalExportChannels(sig);
+        if (!channels.length) {
+          exportRows.push(signalExportRow(sig, "", frameByName, pduByName));
+          continue;
+        }
+        for (const channel of channels) {
+          exportRows.push(signalExportRow(sig, channel, frameByName, pduByName));
+        }
+      }
+      return exportRows;
     }
 
     function xmlEscape(value) {
@@ -7162,18 +7219,6 @@
         n = Math.floor((n - 1) / 26);
       }
       return name;
-    }
-
-    function signalExportRows(report) {
-      const rows = Array.isArray(report?.signals) ? report.signals : [];
-      return rows.map(sig => [
-        (sig.channel_names || []).join("\n"),
-        formatSignalMessageForExport(sig),
-        formatSignalMessageIdForExport(sig),
-        (sig.pdu_names || []).join("\n"),
-        sig.name || "",
-        sig.value_meaning_text || formatSignalValueMeanings(sig.value_meanings || [])
-      ]);
     }
 
     function estimateExcelRowHeight(cells) {
