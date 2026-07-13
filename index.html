@@ -6388,6 +6388,15 @@
       return text(childByLocalName(doc, node, localName));
     }
 
+    function nearestAncestorByLocalName(node, localName) {
+      let cur = node ? node.parentElement : null;
+      while (cur) {
+        if (cur.localName === localName) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    }
+
     function deepText(doc, node, pathArr) {
       let cur = node;
       for (const name of pathArr) {
@@ -6574,6 +6583,7 @@
         if (!channelName || !isDisplayCanChannelName(channelName)) continue;
         const triggerNodes = xall(ch.ownerDocument, ch, ".//*[local-name()='CAN-FRAME-TRIGGERING']");
         for (const tr of triggerNodes) {
+          if (nearestAncestorByLocalName(tr, "CAN-PHYSICAL-CHANNEL") !== ch) continue;
           const frameRef = childText(doc, tr, "FRAME-REF");
           const frameName = basenameFromRef(frameRef) || childText(doc, tr, "SHORT-NAME");
           if (!frameName) continue;
