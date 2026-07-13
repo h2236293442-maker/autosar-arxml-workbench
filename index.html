@@ -6579,8 +6579,8 @@
       const framePortDirections = parsePortDirections(doc, "FRAME-PORT");
       const channelNodes = xall(doc, doc, "//*[local-name()='CAN-PHYSICAL-CHANNEL']");
       for (const ch of channelNodes) {
-        const channelName = childText(doc, ch, "SHORT-NAME");
-        if (!channelName || !isDisplayCanChannelName(channelName)) continue;
+        const channelName = getDisplayCanChannelName(doc, ch);
+        if (!channelName) continue;
         const triggerNodes = xall(ch.ownerDocument, ch, ".//*[local-name()='CAN-FRAME-TRIGGERING']");
         for (const tr of triggerNodes) {
           if (nearestAncestorByLocalName(tr, "CAN-PHYSICAL-CHANNEL") !== ch) continue;
@@ -6624,6 +6624,14 @@
         }
       }
       return { channelsByFrame, idsByFrame, directionsByFrame, channelMetaByFrame };
+    }
+
+    function getDisplayCanChannelName(doc, channelNode) {
+      const physicalName = childText(doc, channelNode, "SHORT-NAME");
+      if (isDisplayCanChannelName(physicalName)) return physicalName;
+      const clusterNode = nearestAncestorByLocalName(channelNode, "CAN-CLUSTER");
+      const clusterName = childText(doc, clusterNode, "SHORT-NAME");
+      return isDisplayCanChannelName(clusterName) ? clusterName : "";
     }
 
     function isDisplayCanChannelName(channelName) {
